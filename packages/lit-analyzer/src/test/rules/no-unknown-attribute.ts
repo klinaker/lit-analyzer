@@ -86,3 +86,16 @@ tsTest("Don't infer public attributes from getAttribute implementation details",
 
 	hasDiagnostic(t, diagnostics, "no-unknown-attribute");
 });
+
+tsTest("Don't report known attributes from a non-JSDoc block comment", t => {
+	const { diagnostics } = getDiagnostics(
+		`/*
+		 * @attr item-id
+		 */
+		class MyElement extends HTMLElement {}
+		customElements.define("my-element", MyElement);
+		html\`<my-element item-id="x"></my-element>\``,
+		{ rules: { "no-unknown-attribute": true, "no-unknown-tag-name": true } }
+	);
+	hasNoDiagnostics(t, diagnostics);
+});
