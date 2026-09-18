@@ -3,6 +3,7 @@ import { toSimpleType } from "ts-simple-type";
 import type { Expression } from "typescript";
 import type { HtmlNodeAttrAssignment } from "../../../analyze/types/html-node/html-node-attr-assignment-types.js";
 import { HtmlNodeAttrAssignmentKind } from "../../../analyze/types/html-node/html-node-attr-assignment-types.js";
+import { HtmlNodeAttrKind } from "../../../analyze/types/html-node/html-node-attr-types.js";
 import type { RuleModuleContext } from "../../../analyze/types/rule/rule-module-context.js";
 import { lazy } from "../../../analyze/util/general-util.js";
 import { removeUndefinedFromType } from "../type/remove-undefined-from-type.js";
@@ -20,7 +21,8 @@ export type BuiltInDirectiveKind =
 	| "templateContent"
 	| "unsafeSVG"
 	| "asyncReplace"
-	| "asyncAppend";
+	| "asyncAppend"
+	| "nothing";
 
 export interface UserDefinedDirectiveKind {
 	name: string;
@@ -37,6 +39,30 @@ export function getDirective(assignment: HtmlNodeAttrAssignment, context: RuleMo
 	const checker = program.getTypeChecker();
 
 	if (assignment.kind !== HtmlNodeAttrAssignmentKind.EXPRESSION) return;
+
+	// Lit's `nothing` sentinel removes the current part. It is a unique symbol,
+	// rather than a callable directive, so recognize the named sentinel before
+	// looking for directive calls. Event listeners have a different runtime
+	// contract and must continue to validate callable values normally.
+	if (assignment.htmlAttr.kind !== HtmlNodeAttrKind.EVENT_LISTENER) {
+		const expressionType = toSimpleType(checker.getTypeAtLocation(assignment.expression), checker);
+
+		if (isNothingType(expressionType)) {
+			return {
+				kind: "nothing",
+				actualType: () => ({ kind: "ANY" }),
+				args: []
+			};
+		}
+
+		if (containsNothingType(expressionType)) {
+			return {
+				kind: "nothing",
+				actualType: () => removeNothingFromType(expressionType),
+				args: []
+			};
+		}
+	}
 
 	// Type check lit-html directives
 	if (ts.isCallExpression(assignment.expression)) {
@@ -161,4 +187,44 @@ export function getDirective(assignment: HtmlNodeAttrAssignment, context: RuleMo
 	}
 
 	return;
+}
+
+function isNothingType(type: SimpleType): boolean {
+	switch (type.kind) {
+		case "ES_SYMBOL_UNIQUE":
+			return type.value.includes("@nothing@");
+		case "ALIAS":
+			return isNothingType(type.target);
+		default:
+			return false;
+	}
+}
+
+function containsNothingType(type: SimpleType): boolean {
+	if (isNothingType(type)) return true;
+
+	switch (type.kind) {
+		case "ALIAS":
+			return containsNothingType(type.target);
+		case "UNION":
+			return type.types.some(containsNothingType);
+		default:
+			return false;
+	}
+}
+
+function removeNothingFromType(type: SimpleType): SimpleType {
+	switch (type.kind) {
+		case "ALIAS":
+			return {
+				...type,
+				target: removeNothingFromType(type.target)
+			};
+		case "UNION": {
+			const types = type.types.filter(typePart => !isNothingType(typePart)).map(removeNothingFromType);
+			return types.length === 1 ? types[0] : { ...type, types };
+		}
+		default:
+			return type;
+	}
 }

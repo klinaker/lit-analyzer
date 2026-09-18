@@ -36,7 +36,8 @@ const rule: RuleModule = {
 
 			// Get suggested target because the name could be a typo.
 			const suggestedTarget = suggestTargetForHtmlAttr(htmlAttr, htmlStore);
-			const suggestedModifier = suggestedTarget == null ? undefined : litAttributeModifierForTarget(suggestedTarget);
+			const suggestedModifier =
+				suggestedTarget == null ? undefined : litAttributeModifierForTarget(suggestedTarget, context.program.getTypeChecker());
 			const suggestedMemberName = suggestedTarget == null ? undefined : suggestedTarget.name;
 
 			const suggestion = getSuggestionText({ config, definitionStore, htmlTag });

@@ -3,31 +3,19 @@ import { isAssignableToType as _isAssignableToType, typeToString } from "ts-simp
 import type { HtmlNodeAttrAssignment } from "../../../analyze/types/html-node/html-node-attr-assignment-types.js";
 import { HtmlNodeAttrAssignmentKind } from "../../../analyze/types/html-node/html-node-attr-assignment-types.js";
 import type { HtmlNodeAttr } from "../../../analyze/types/html-node/html-node-attr-types.js";
+import { isHtmlMember } from "../../../analyze/parse/parse-html-data/html-tag.js";
 import type { RuleModuleContext } from "../../../analyze/types/rule/rule-module-context.js";
 import { documentRangeToSFRange, rangeFromHtmlNodeAttr } from "../../../analyze/util/range-util.js";
 import { isPrimitiveArrayType } from "../../../analyze/util/type-util.js";
 import { isLitDirective } from "../directive/is-lit-directive.js";
 import { isAssignableBindingUnderSecuritySystem } from "./is-assignable-binding-under-security-system.js";
-import { isAssignableToType } from "./is-assignable-to-type.js";
-import { HtmlNodeAttrKind } from "../../../analyze/types/html-node/html-node-attr-types.js";
+import { isAssignableToPrimitiveType } from "./is-assignable-to-primitive-type.js";
+import { type AssignabilityTypes, isAssignableToType } from "./is-assignable-to-type.js";
 
-export function isAssignableInAttributeBinding(
-	htmlAttr: HtmlNodeAttr,
-	{ typeA, typeB }: { typeA: SimpleType; typeB: SimpleType },
-	context: RuleModuleContext
-): boolean | undefined {
+export function isAssignableInAttributeBinding(htmlAttr: HtmlNodeAttr, types: AssignabilityTypes, context: RuleModuleContext): boolean | undefined {
+	const { typeA, typeB } = types;
 	const { assignment } = htmlAttr;
 	if (assignment == null) return undefined;
-
-	// If the attribute has a custom converter, then do not check it
-	if (htmlAttr.kind === HtmlNodeAttrKind.ATTRIBUTE) {
-		const htmlAttrTarget = context.htmlStore.getHtmlAttrTarget(htmlAttr);
-		const hasConverter = htmlAttrTarget?.declaration?.meta?.hasConverter;
-
-		if (hasConverter) {
-			return undefined;
-		}
-	}
 
 	if (assignment.kind === HtmlNodeAttrAssignmentKind.BOOLEAN) {
 		if (!isAssignableToType({ typeA, typeB }, context)) {
@@ -55,12 +43,42 @@ export function isAssignableInAttributeBinding(
 			}
 		}
 
+		// A custom converter owns the conversion from an attribute value to the property type.
+		// Boolean bindings are handled above and must continue to use their normal type checks.
+		const target = context.htmlStore.getHtmlAttrTarget(htmlAttr);
+		if (
+			target != null &&
+			isHtmlMember(target) &&
+			target.declaration?.meta?.hasConverter === true &&
+			isAssignableToPrimitiveType(typeB) &&
+			!isAssignableToPrimitiveType(typeA)
+		) {
+			return true;
+		}
+
+		// The HTML `step` attribute accepts the special string value `any`, even
+		// though its numeric API is represented as a number in the HTML data.
+		// Keep this exception scoped to the native attribute and to numeric or
+		// string-valued targets so unrelated attributes do not gain a string
+		// escape hatch.
+		const stepTarget = context.htmlStore.getHtmlAttrTarget(htmlAttr);
+		if (
+			htmlAttr.name === "step" &&
+			stepTarget != null &&
+			isHtmlMember(stepTarget) &&
+			stepTarget.builtIn === true &&
+			isStepAnyType(typeB) &&
+			(typeA.kind === "NUMBER" || typeA.kind === "STRING")
+		) {
+			return true;
+		}
+
 		const primitiveArrayTypeResult = isAssignableInPrimitiveArray(assignment, { typeA, typeB }, context);
 		if (primitiveArrayTypeResult !== undefined) {
 			return primitiveArrayTypeResult;
 		}
 
-		if (!isAssignableToType({ typeA, typeB }, context, { isAssignable: isAssignableToTypeWithStringCoercion })) {
+		if (!isAssignableToType(types, context, { isAssignable: isAssignableToTypeWithStringCoercion })) {
 			context.report({
 				location: rangeFromHtmlNodeAttr(htmlAttr),
 				message: `Type '${typeToString(typeB)}' is not assignable to '${typeToString(typeA)}'`
@@ -71,6 +89,26 @@ export function isAssignableInAttributeBinding(
 	}
 
 	return true;
+}
+
+function isStepAnyType(type: SimpleType): boolean {
+	switch (type.kind) {
+		case "STRING_LITERAL":
+			return type.value === "any";
+		case "NUMBER":
+		case "NUMBER_LITERAL":
+			return true;
+		case "ALIAS":
+			return isStepAnyType(type.target);
+		case "UNION":
+			return (
+				type.types.length > 0 &&
+				type.types.some(typePart => typePart.kind === "STRING_LITERAL" && typePart.value === "any") &&
+				type.types.every(isStepAnyType)
+			);
+		default:
+			return false;
+	}
 }
 
 /**

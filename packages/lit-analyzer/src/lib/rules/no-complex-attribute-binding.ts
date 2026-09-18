@@ -1,11 +1,13 @@
-import { isAssignableToPrimitiveType, typeToString } from "ts-simple-type";
+import { typeToString } from "ts-simple-type";
 import { HtmlNodeAttrAssignmentKind } from "../analyze/types/html-node/html-node-attr-assignment-types.js";
 import { HtmlNodeAttrKind } from "../analyze/types/html-node/html-node-attr-types.js";
+import { isHtmlMember } from "../analyze/parse/parse-html-data/html-tag.js";
 import type { RuleModule } from "../analyze/types/rule/rule-module.js";
 import { rangeFromHtmlNodeAttr } from "../analyze/util/range-util.js";
 import { isLitDirective } from "./util/directive/is-lit-directive.js";
 import { extractBindingTypes } from "./util/type/extract-binding-types.js";
 import { isAssignableBindingUnderSecuritySystem } from "./util/type/is-assignable-binding-under-security-system.js";
+import { isAssignableToPrimitiveType } from "./util/type/is-assignable-to-primitive-type.js";
 
 /**
  * This rule validates that complex types are not used within an expression in an attribute binding.
@@ -24,15 +26,25 @@ const rule: RuleModule = {
 		if (assignment.kind === HtmlNodeAttrAssignmentKind.ELEMENT_EXPRESSION) return;
 
 		const { typeA, typeB } = extractBindingTypes(assignment, context);
+		const checker = context.program.getTypeChecker();
+		const originalTypeB = assignment.kind === HtmlNodeAttrAssignmentKind.EXPRESSION ? checker.getTypeAtLocation(assignment.expression) : undefined;
 
 		// Don't validate directives in this rule, because they are assignable even though they are complex types (functions).
 		if (isLitDirective(typeB)) return;
 
-		const htmlAttrTarget = context.htmlStore.getHtmlAttrTarget(htmlAttr);
-		const hasConverter = htmlAttrTarget?.declaration?.meta?.hasConverter;
+		// A custom converter owns the conversion from an attribute value to the property type,
+		// so a primitive value is accepted even when the property type is not primitive.
+		// Boolean attributes are kept on their normal paths because they never go through the converter.
+		const target = context.htmlStore.getHtmlAttrTarget(htmlAttr);
+		const hasCustomConverter = target != null && isHtmlMember(target) && target.declaration?.meta?.hasConverter === true;
+		const typeBIsPrimitive = isAssignableToPrimitiveType(typeB, originalTypeB, checker);
+		const typeAIsPrimitive = isAssignableToPrimitiveType(typeA);
+		if (hasCustomConverter && assignment.kind !== HtmlNodeAttrAssignmentKind.BOOLEAN && typeBIsPrimitive && !typeAIsPrimitive) {
+			return;
+		}
 
 		// Only primitive types should be allowed as "typeB"
-		if (!isAssignableToPrimitiveType(typeB)) {
+		if (!typeBIsPrimitive) {
 			if (isAssignableBindingUnderSecuritySystem(htmlAttr, { typeA, typeB }, context) !== undefined) {
 				// This is binding via a security sanitization system, let it do
 				// this check. Apparently complex values are OK to assign here.
@@ -59,8 +71,8 @@ const rule: RuleModule = {
 			});
 		}
 
-		// Only primitive types without a custom converter should be allowed as "typeA"
-		else if (!hasConverter && !isAssignableToPrimitiveType(typeA)) {
+		// Only primitive types should be allowed as "typeA"
+		else if (!typeAIsPrimitive) {
 			const message = `You are assigning the primitive '${typeToString(typeB)}' to a non-primitive type '${typeToString(typeA)}'.`;
 			const newModifier = ".";
 

@@ -20,7 +20,6 @@ import {
 	mergeHtmlTags,
 	mergeCssProperties
 } from "../../parse/parse-html-data/html-tag.js";
-import { lazy } from "../../util/general-util.js";
 import { iterableDefined } from "../../util/iterable-util.js";
 import { HtmlDataSource } from "./html-data-source.js";
 
@@ -452,7 +451,12 @@ function mergeRelatedMembers<T extends HtmlMember>(members: Iterable<T>): Readon
 				required: existingMember.required && member.required,
 				builtIn: existingMember.required && member.required,
 				fromTagName: existingMember.fromTagName || member.fromTagName,
-				getType: lazy(() => mergeRelatedTypeToUnion(prevType(), member.getType())),
+				getType: checker => mergeRelatedTypeToUnion(prevType(checker), member.getType(checker)),
+				// The original TypeScript type belongs to only the first declaration,
+				// while the merged simple type accepts values from every declaration.
+				// Keeping the first original type would reject valid values from a
+				// later declaration, so fall back to the merged simple type comparison.
+				getTypeScriptType: undefined,
 				related: existingMember.related == null ? [existingMember, member] : [...existingMember.related, member]
 			});
 		}
@@ -535,7 +539,7 @@ function mergeRelatedEvents(events: Iterable<HtmlEvent>): ReadonlyMap<string, Ht
 				...existingEvent,
 				global: existingEvent.global && event.global,
 				description: undefined,
-				getType: lazy(() => mergeRelatedTypeToUnion(prevType(), event.getType())),
+				getType: checker => mergeRelatedTypeToUnion(prevType(checker), event.getType(checker)),
 				related: existingEvent.related == null ? [existingEvent, event] : [...existingEvent.related, event],
 				fromTagName: existingEvent.fromTagName || event.fromTagName
 			});

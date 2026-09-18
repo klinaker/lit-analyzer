@@ -1,19 +1,21 @@
 import type { SimpleType, SimpleTypeAny } from "ts-simple-type";
 import { isSimpleType, toSimpleType } from "ts-simple-type";
-import type { TypeChecker } from "typescript";
+import type { Type, TypeChecker } from "typescript";
 import type { AnalyzerResult, ComponentDeclaration, ComponentDefinition, ComponentFeatures } from "@jackolope/web-component-analyzer";
+import { tsModule } from "../ts-module.js";
 import { lazy } from "../util/general-util.js";
 import type { HtmlDataCollection, HtmlDataFeatures, HtmlTag } from "./parse-html-data/html-tag.js";
 
 export interface AnalyzeResultConversionOptions {
 	addDeclarationPropertiesAsAttributes?: boolean;
 	checker: TypeChecker;
+	ts?: typeof tsModule.ts;
 }
 
 export function convertAnalyzeResultToHtmlCollection(result: AnalyzerResult, options: AnalyzeResultConversionOptions): HtmlDataCollection {
 	const tags = result.componentDefinitions.map(definition => convertComponentDeclarationToHtmlTag(definition.declaration, definition, options));
 
-	const global = result.globalFeatures == null ? {} : convertComponentFeaturesToHtml(result.globalFeatures, { checker: options.checker });
+	const global = result.globalFeatures == null ? {} : convertComponentFeaturesToHtml(result.globalFeatures, options);
 
 	return {
 		tags,
@@ -24,7 +26,7 @@ export function convertAnalyzeResultToHtmlCollection(result: AnalyzerResult, opt
 export function convertComponentDeclarationToHtmlTag(
 	declaration: ComponentDeclaration | undefined,
 	definition: ComponentDefinition | undefined,
-	{ checker, addDeclarationPropertiesAsAttributes }: AnalyzeResultConversionOptions
+	{ checker, ts, addDeclarationPropertiesAsAttributes }: AnalyzeResultConversionOptions
 ): HtmlTag {
 	const tagName = definition?.tagName ?? "";
 
@@ -48,7 +50,7 @@ export function convertComponentDeclarationToHtmlTag(
 		tagName,
 		builtIn,
 		description: declaration.jsDoc?.description,
-		...convertComponentFeaturesToHtml(declaration, { checker, builtIn, fromTagName: tagName })
+		...convertComponentFeaturesToHtml(declaration, { checker, ts, builtIn, fromTagName: tagName })
 	};
 
 	if (addDeclarationPropertiesAsAttributes && !builtIn) {
@@ -73,7 +75,7 @@ export function convertComponentDeclarationToHtmlTag(
 
 export function convertComponentFeaturesToHtml(
 	features: ComponentFeatures,
-	{ checker, builtIn, fromTagName }: { checker: TypeChecker; builtIn?: boolean; fromTagName?: string }
+	{ checker, ts = tsModule.ts, builtIn, fromTagName }: AnalyzeResultConversionOptions & { builtIn?: boolean; fromTagName?: string }
 ): HtmlDataFeatures {
 	const result: HtmlDataFeatures = {
 		attributes: [],
@@ -93,7 +95,7 @@ export function convertComponentFeaturesToHtml(
 				const type = event.type?.();
 
 				if (type == null) {
-					return { kind: "ANY" };
+					return { kind: "ANY" } as const;
 				}
 
 				return isSimpleType(type) ? type : toSimpleType(type, checker);
@@ -163,18 +165,33 @@ export function convertComponentFeaturesToHtml(
 			continue;
 		}
 
+		// Authored SimpleTypes have no native declaration to resolve. Native types
+		// must instead be read through the active checker, even for a reused AST.
+		const declaredSimpleType = lazy(() => {
+			const type = member.type?.() ?? ({ kind: "ANY" } as SimpleTypeAny);
+			return isSimpleType(type) ? type : member.node == null ? toSimpleType(type, checker) : undefined;
+		});
+		const types = new WeakMap<TypeChecker, { simpleType: SimpleType; nativeType?: Type }>();
+		const getMemberType = (currentChecker = checker) => {
+			let result = types.get(currentChecker);
+			if (result == null) {
+				const simpleType = declaredSimpleType();
+				if (simpleType != null) {
+					result = { simpleType };
+				} else {
+					const node = ts.isSetAccessor(member.node) ? (member.node.parameters[0] ?? member.node) : member.node;
+					const nativeType = currentChecker.getTypeAtLocation(node);
+					result = { nativeType, simpleType: toSimpleType(nativeType, currentChecker) };
+				}
+				types.set(currentChecker, result);
+			}
+			return result;
+		};
 		const base = {
 			declaration: member,
 			description: member.jsDoc?.description,
-			getType: lazy(() => {
-				const type = member.type?.();
-
-				if (type == null) {
-					return { kind: "ANY" } as SimpleTypeAny;
-				}
-
-				return isSimpleType(type) ? type : toSimpleType(type, checker);
-			}),
+			getType: (currentChecker?: TypeChecker) => getMemberType(currentChecker).simpleType,
+			getTypeScriptType: (currentChecker?: TypeChecker) => getMemberType(currentChecker).nativeType,
 			builtIn,
 			fromTagName
 		};

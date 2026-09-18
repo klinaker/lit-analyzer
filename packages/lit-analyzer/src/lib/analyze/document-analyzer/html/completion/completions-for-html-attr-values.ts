@@ -10,7 +10,7 @@ import type { DocumentPositionContext } from "../../../util/get-position-context
 export function completionsForHtmlAttrValues(
 	htmlNodeAttr: HtmlNodeAttr,
 	location: DocumentPositionContext,
-	{ htmlStore }: LitAnalyzerContext
+	{ htmlStore, program }: LitAnalyzerContext
 ): LitCompletion[] {
 	// There is not point in showing completions for event listener bindings
 	if (htmlNodeAttr.kind === HtmlNodeAttrKind.EVENT_LISTENER) return [];
@@ -37,7 +37,7 @@ export function completionsForHtmlAttrValues(
 		}
 	}
 
-	const options = getOptionsFromType(htmlTagMember.getType());
+	const options = getOptionsFromType(htmlTagMember.getType(program.getTypeChecker()));
 
 	return options.map(
 		option =>

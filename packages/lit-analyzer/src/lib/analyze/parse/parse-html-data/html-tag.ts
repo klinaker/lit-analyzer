@@ -1,5 +1,6 @@
 import type { SimpleType } from "ts-simple-type";
 import { isAssignableToSimpleTypeKind, typeToString } from "ts-simple-type";
+import type { Type, TypeChecker } from "typescript";
 import type {
 	ComponentCssPart,
 	ComponentCssProperty,
@@ -53,7 +54,8 @@ export interface HtmlMemberBase {
 	name?: string;
 	fromTagName?: string;
 	related?: HtmlMember[];
-	getType(): SimpleType;
+	getType(checker?: TypeChecker): SimpleType;
+	getTypeScriptType?(checker?: TypeChecker): Type | undefined;
 }
 
 export interface HtmlAttr extends HtmlMemberBase {
@@ -78,7 +80,7 @@ export interface HtmlEvent {
 	global?: boolean;
 	fromTagName?: string;
 	related?: HtmlEvent[];
-	getType(): SimpleType;
+	getType(checker?: TypeChecker): SimpleType;
 }
 
 export interface HtmlSlot {
@@ -124,9 +126,9 @@ export function isHtmlEvent(target: HtmlAttrTarget): target is HtmlEvent {
 	return !isHtmlMember(target);
 }
 
-export function litAttributeModifierForTarget(target: HtmlAttrTarget): string {
+export function litAttributeModifierForTarget(target: HtmlAttrTarget, checker?: TypeChecker): string {
 	if (isHtmlAttr(target)) {
-		if (isAssignableToSimpleTypeKind(target.getType(), "BOOLEAN")) {
+		if (isAssignableToSimpleTypeKind(target.getType(checker), "BOOLEAN")) {
 			return LIT_HTML_BOOLEAN_ATTRIBUTE_MODIFIER;
 		}
 		return "";
@@ -208,7 +210,10 @@ export function documentationForHtmlTag(htmlTag: HtmlTag, options: DescriptionOp
 	return desc || undefined;
 }
 
-export function documentationForTarget(target: HtmlAttrTarget, options: DescriptionOptions & { modifier?: string } = {}): string | undefined {
+export function documentationForTarget(
+	target: HtmlAttrTarget,
+	options: DescriptionOptions & { modifier?: string; checker?: TypeChecker } = {}
+): string | undefined {
 	const typeText = targetKindAndTypeText(target, options);
 	const documentation = descriptionForTarget(target, options);
 
@@ -226,17 +231,21 @@ export function descriptionForTarget(target: HtmlAttrTarget, options: Descriptio
 	return target.description;
 }
 
-export function targetKindAndTypeText(target: HtmlAttrTarget, options: DescriptionOptions & { modifier?: string } = {}): string {
+export function targetKindAndTypeText(
+	target: HtmlAttrTarget,
+	options: DescriptionOptions & { modifier?: string; checker?: TypeChecker } = {}
+): string {
 	const prefix = `(${targetKindText(target)}) ${options.modifier || ""}${target.name}`;
+	const type = target.getType(options.checker);
 
-	if (isAssignableToSimpleTypeKind(target.getType(), "ANY")) {
+	if (isAssignableToSimpleTypeKind(type, "ANY")) {
 		if (target.declaration?.typeHint) {
 			return `${prefix}: ${target.declaration.typeHint}`;
 		}
 		return `${prefix}`;
 	}
 
-	return `${prefix}: ${typeToString(target.getType())}`;
+	return `${prefix}: ${typeToString(type)}`;
 }
 
 export function targetKindText(target: HtmlAttrTarget): string {

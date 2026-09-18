@@ -35,7 +35,7 @@ Each rule can have severity of `off`, `warning` or `error`. You can toggle rules
 | [no-noncallable-event-binding](#no-noncallable-event-binding)   | Disallow event listener bindings with a noncallable type. | error | error |
 | [no-boolean-in-attribute-binding](#no-boolean-in-attribute-binding) | Disallow attribute bindings with a boolean type. | error | error |
 | [no-complex-attribute-binding](#no-complex-attribute-binding)   | Disallow attribute bindings with a complex type. | error | error |
-| [no-nullable-attribute-binding](#no-nullable-attribute-binding) | Disallow attribute bindings with nullable types such as "null" or "undefined". This is not needed in newer versions of Lit, but can still be configured if desired. | off | off |
+| [no-nullable-attribute-binding](#no-nullable-attribute-binding) | Disallow attribute bindings with nullable types such as "null" or "undefined". This rule is off by default in both normal and strict configurations. It is not needed in newer versions of Lit, but can still be configured explicitly if desired. | off | off |
 | [no-incompatible-type-binding](#no-incompatible-type-binding)   | Disallow incompatible type in bindings. | error | error |
 | [no-invalid-directive-binding](#no-invalid-directive-binding)   | Disallow using built-in directives in unsupported bindings. | error | error |
 | [no-unintended-mixed-binding](#no-unintended-mixed-binding)     | Disallow mixed value bindings where a character `'`, `"`, `}` or `/` is unintentionally included in the binding. | warning | warning |
@@ -314,6 +314,8 @@ html`<input ?disabled="${isDisabled}" />`;
 
 #### no-complex-attribute-binding
 
+Branded primitive values remain primitive attribute values. A property with a custom converter can receive primitive attribute input even when its property type is non-primitive. This does not permit arbitrary objects in attributes or suppress an explicitly enabled `no-nullable-attribute-binding` rule.
+
 Binding an object using an attribute binding would result in binding the string "[object Object]" to the attribute. In this case it's probably better to use a property binding instead.
 
 The following example is considered a warning:
@@ -349,6 +351,10 @@ html`<input value="${ifDefined(maybeNull === null ? undefined : maybeNull)}" />`
 ```
 
 #### no-incompatible-type-binding
+
+Generic custom-element parameters are inferred from bindings on each tag and reused for related members, including setter write types and callbacks. Native TypeScript types preserve branded and structural compatibility, including merged declarations. Shared and recursive type graphs terminate during inference, and nullable source unions retain all alternatives.
+
+The native `step` attribute accepts `"any"`. Lit's `nothing` sentinel removes the part in supported attribute and property bindings. Checker-dependent types and binding results refresh after language-service edits, including quick info and completions.
 
 Assignments in your HTML are type checked just like they would be in Typescript.
 

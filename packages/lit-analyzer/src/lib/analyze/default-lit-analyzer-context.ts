@@ -265,6 +265,7 @@ export class DefaultLitAnalyzerContext implements LitAnalyzerContext {
 		this.definitionStore.absorbAnalysisResult(sourceFile, analyzeResult);
 		const htmlCollection = convertAnalyzeResultToHtmlCollection(analyzeResult, {
 			checker: this.checker,
+			ts: this.ts,
 			addDeclarationPropertiesAsAttributes: this.program.isSourceFileFromExternalLibrary(sourceFile)
 		});
 		this.htmlStore.absorbCollection(htmlCollection, reg);
@@ -275,7 +276,7 @@ export class DefaultLitAnalyzerContext implements LitAnalyzerContext {
 
 		const result = analyzeHTMLElement(this.program, this.ts);
 		if (result != null) {
-			const extension = convertComponentDeclarationToHtmlTag(result, undefined, { checker: this.checker });
+			const extension = convertComponentDeclarationToHtmlTag(result, undefined, { checker: this.checker, ts: this.ts });
 			this.htmlStore.absorbSubclassExtension("HTMLElement", extension);
 			this.hasAnalyzedSubclassExtensions = true;
 		}

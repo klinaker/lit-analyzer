@@ -118,3 +118,7 @@ customElements.define("my-element", MyElement);
 ## ➤ License
 
 Licensed under [MIT](https://opensource.org/licenses/MIT).
+
+### Binding type analysis
+
+Generic custom-element bindings infer parameters per tag, including setter write types and callbacks. Native TypeScript types retain branded and structural compatibility. Primitive attribute values can use custom converters; the native `step="any"` value and Lit's `nothing` sentinel are recognized. Checker-dependent caches refresh when the language service updates the program, keeping diagnostics, completions, and quick info current across edits. The nullable-attribute rule remains off by default, including in strict mode. See the [rule documentation](../../docs/rules.md) for supported binding cases.

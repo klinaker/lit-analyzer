@@ -66,6 +66,11 @@ export function compileFiles(inputFiles: TestFile[] | TestFile = [], options: Co
 		allowJs: true,
 		sourceMap: false,
 		strict: true, // if strict = false, "undefined" and "null" will be removed from unions types.
+		// Load the DOM via the `lib` option instead of adding lib.dom.d.ts as a
+		// root name: on TypeScript < 6 the root-name approach makes the checker
+		// resolve generic member types such as `items: T[]` to the empty object
+		// type, which breaks generic component inference in the tests.
+		lib: ["lib.dom.d.ts", "lib.esnext.d.ts"],
 		...options
 	};
 
@@ -106,8 +111,7 @@ export function compileFiles(inputFiles: TestFile[] | TestFile = [], options: Co
 	};
 
 	const program = ts.createProgram({
-		//rootNames: [...files.map(file => file.fileName!), "node_modules/typescript/lib/lib.dom.d.ts"],
-		rootNames: [...files.map(file => file.fileName!), ...(includeLib ? ["node_modules/typescript/lib/lib.dom.d.ts"] : [])], //rootNames: files.map(file => file.fileName!),
+		rootNames: [...files.map(file => file.fileName!)],
 		options: compilerOptions,
 		host: compilerHost
 	});

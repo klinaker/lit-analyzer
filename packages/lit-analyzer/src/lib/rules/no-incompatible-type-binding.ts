@@ -32,7 +32,7 @@ const rule: RuleModule = {
 			return;
 		}
 
-		const { typeA, typeB } = extractBindingTypes(assignment, context);
+		const { typeA, typeB, typeAOriginal, typeBOriginal } = extractBindingTypes(assignment, context);
 
 		// Validate types based on the binding in which they appear
 		switch (htmlAttr.modifier) {
@@ -41,14 +41,14 @@ const rule: RuleModule = {
 				break;
 
 			case LIT_HTML_PROP_ATTRIBUTE_MODIFIER:
-				isAssignableInPropertyBinding(htmlAttr, { typeA, typeB }, context);
+				isAssignableInPropertyBinding(htmlAttr, { typeA, typeB, typeAOriginal, typeBOriginal }, context);
 				break;
 
 			case LIT_HTML_EVENT_LISTENER_ATTRIBUTE_MODIFIER:
 				break;
 
 			default: {
-				isAssignableInAttributeBinding(htmlAttr, { typeA, typeB }, context);
+				isAssignableInAttributeBinding(htmlAttr, { typeA, typeB, typeAOriginal, typeBOriginal }, context);
 				break;
 			}
 		}

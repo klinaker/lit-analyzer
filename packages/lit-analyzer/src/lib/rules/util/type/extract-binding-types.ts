@@ -6,15 +6,27 @@ import { HtmlNodeAttrAssignmentKind } from "../../../analyze/types/html-node/htm
 import { HtmlNodeAttrKind } from "../../../analyze/types/html-node/html-node-attr-types.js";
 import type { RuleModuleContext } from "../../../analyze/types/rule/rule-module-context.js";
 import { getDirective } from "../directive/get-directive.js";
+import { resolveGenericComponentType } from "./resolve-generic-component-type.js";
+import { rememberSimpleTypeOriginal } from "./simple-type-original.js";
 
-const cache = new WeakMap<HtmlNodeAttrAssignment, { typeA: SimpleType; typeB: SimpleType }>();
+export interface BindingTypes {
+	typeA: SimpleType;
+	typeB: SimpleType;
+	typeAOriginal?: Type;
+	typeBOriginal?: Type;
+}
 
-export function extractBindingTypes(assignment: HtmlNodeAttrAssignment, context: RuleModuleContext): { typeA: SimpleType; typeB: SimpleType } {
-	if (cache.has(assignment)) {
-		return cache.get(assignment)!;
-	}
+const caches = new WeakMap<TypeChecker, WeakMap<HtmlNodeAttrAssignment, BindingTypes>>();
 
+export function extractBindingTypes(assignment: HtmlNodeAttrAssignment, context: RuleModuleContext): BindingTypes {
 	const checker = context.program.getTypeChecker();
+	let cache = caches.get(checker);
+	if (cache == null) {
+		cache = new WeakMap<HtmlNodeAttrAssignment, BindingTypes>();
+		caches.set(checker, cache);
+	}
+	const cached = cache.get(assignment);
+	if (cached != null) return cached;
 
 	// Relax the type we are looking at an expression in javascript files
 	//const inJavascriptFile = request.file.fileName.endsWith(".js");
@@ -24,24 +36,36 @@ export function extractBindingTypes(assignment: HtmlNodeAttrAssignment, context:
 	// Infer the type of the RHS
 	//const typeBInferred = shouldRelaxTypeB ? ({ kind: "ANY" } as SimpleType) : inferTypeFromAssignment(assignment, checker);
 	const typeBInferred = inferTypeFromAssignment(assignment, checker);
+	let typeBOriginal = shouldRelaxTypeB || isSimpleType(typeBInferred) ? undefined : typeBInferred;
 
 	// Convert typeB to SimpleType
 	let typeB = (() => {
 		const type = isSimpleType(typeBInferred) ? typeBInferred : toSimpleType(typeBInferred, checker);
 		return shouldRelaxTypeB ? relaxType(type) : type;
 	})();
+	if (!isSimpleType(typeBInferred)) {
+		rememberSimpleTypeOriginal(typeB, typeBInferred, checker);
+	}
 
 	// Find a corresponding target for this attribute
 	const htmlAttrTarget = context.htmlStore.getHtmlAttrTarget(assignment.htmlAttr);
 	//if (htmlAttrTarget == null) return [];
 
-	const typeA = htmlAttrTarget == null ? ({ kind: "ANY" } as SimpleType) : htmlAttrTarget.getType();
+	const genericTypeResolution = htmlAttrTarget == null ? undefined : resolveGenericComponentType(assignment, htmlAttrTarget, context);
+	const typeA = genericTypeResolution?.type ?? (htmlAttrTarget == null ? ({ kind: "ANY" } as SimpleType) : htmlAttrTarget.getType(checker));
+	const typeAOriginal =
+		genericTypeResolution?.wasResolved === true
+			? undefined
+			: htmlAttrTarget != null && "getTypeScriptType" in htmlAttrTarget
+				? htmlAttrTarget.getTypeScriptType?.(checker)
+				: undefined;
 
 	// Handle directives
 	const directive = getDirective(assignment, context);
 	const directiveType = directive?.actualType?.();
 	if (directiveType != null) {
 		typeB = directiveType;
+		typeBOriginal = undefined;
 	}
 
 	// Handle `nothing` and `noChange` symbols
@@ -49,7 +73,7 @@ export function extractBindingTypes(assignment: HtmlNodeAttrAssignment, context:
 	typeB = excludeSymbolsFromUnion(typeB);
 
 	// Cache the result
-	const result = { typeA, typeB };
+	const result = { typeA, typeB, typeAOriginal, typeBOriginal };
 	cache.set(assignment, result);
 
 	return result;

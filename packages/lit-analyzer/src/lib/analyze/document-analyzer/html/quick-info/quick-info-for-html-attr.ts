@@ -4,13 +4,13 @@ import type { HtmlNodeAttr } from "../../../types/html-node/html-node-attr-types
 import type { LitQuickInfo } from "../../../types/lit-quick-info.js";
 import { rangeFromHtmlNodeAttr } from "../../../util/range-util.js";
 
-export function quickInfoForHtmlAttr(htmlAttr: HtmlNodeAttr, { htmlStore }: LitAnalyzerContext): LitQuickInfo | undefined {
+export function quickInfoForHtmlAttr(htmlAttr: HtmlNodeAttr, { htmlStore, program }: LitAnalyzerContext): LitQuickInfo | undefined {
 	const target = htmlStore.getHtmlAttrTarget(htmlAttr);
 	if (target == null) return undefined;
 
 	return {
 		range: rangeFromHtmlNodeAttr(htmlAttr),
-		primaryInfo: targetKindAndTypeText(target, { modifier: htmlAttr.modifier }),
+		primaryInfo: targetKindAndTypeText(target, { modifier: htmlAttr.modifier, checker: program.getTypeChecker() }),
 		secondaryInfo: descriptionForTarget(target, { markdown: true })
 	};
 }

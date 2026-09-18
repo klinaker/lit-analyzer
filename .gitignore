@@ -12,6 +12,7 @@ out
 .wireit/
 .tsbuildinfo
 /.nx/workspace-data
+/lib/
 
 /packages/*/lib
 /packages/*/out
@@ -23,4 +24,3 @@ out
 
 /packages/web-component-analyzer/.rollup.cache
 !/packages/web-component-analyzer/test
-

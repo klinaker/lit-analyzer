@@ -81,7 +81,7 @@ function tagDataToHtmlTagAttr(tagDataAttr: IAttributeData, config: ParseVscodeHt
 		name,
 		description: stringOrMarkupContentToString(description),
 		fromTagName,
-		getType: lazy(() => type || { kind: "ANY" }),
+		getType: lazy(() => type || ({ kind: "ANY" } as const)),
 		builtIn: config.builtIn
 	};
 }
