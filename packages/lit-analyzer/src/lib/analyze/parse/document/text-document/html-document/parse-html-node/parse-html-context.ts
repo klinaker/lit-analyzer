@@ -5,5 +5,6 @@ import type { HtmlDocument } from "../html-document.js";
 export interface ParseHtmlContext {
 	html: string;
 	document: HtmlDocument;
+	recoverExplicitlyClosedCustomElement: boolean;
 	getPartsAtOffsetRange(range: Range): (string | Expression)[];
 }

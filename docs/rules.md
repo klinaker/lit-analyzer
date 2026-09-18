@@ -99,6 +99,10 @@ html`<my-element></my-element>`;
 
 #### no-unclosed-tag
 
+For compatibility with clone-template helpers, a template used directly as an argument of a call whose callee text is exactly `createElement` can recover an explicit matching custom-element end tag when an attributed opening tag is missing `>`. For example, ``createElement(html`<my-element value="x" </my-element>`)`` recovers the end-tag location and suppresses attributes created by parse5 from that closing tag.
+
+This is recovery for malformed input; it does not make the HTML valid. It preserves useful analysis for existing helper templates and avoids cascading diagnostics from the consumed closing tag. Plain templates, parenthesized template arguments, qualified calls such as `document.createElement(...)`, aliases of the helper, missing or mismatched end tags, and genuinely self-closing custom elements do not receive this recovery. Matching tag names are case-insensitive. HTML whitespace is allowed before the closing `>`, but not between `</` and the tag name. Real attributes preceding the closing tag remain available for analysis, even when their name matches the element.
+
 Unclosed tags, and invalid self closing tags like custom elements tags, are checked.
 
 The following examples are considered warnings:

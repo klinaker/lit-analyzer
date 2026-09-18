@@ -1,6 +1,8 @@
 import { TS_IGNORE_FLAG } from "../../../../../constants.js";
 import type { HtmlNode, IHtmlNodeBase, IHtmlNodeSourceCodeLocation } from "../../../../../types/html-node/html-node-types.js";
 import { HtmlNodeKind } from "../../../../../types/html-node/html-node-types.js";
+import type { Range } from "../../../../../types/range.js";
+import { isCustomElementTagName } from "../../../../../util/is-valid-name.js";
 import { isCommentNode, isTagNode } from "../parse-html-p5/parse-html.js";
 import type { DefaultTreeAdapterTypes } from "parse5";
 import { parseHtmlNodeAttrs } from "./parse-html-attribute.js";
@@ -52,10 +54,11 @@ export function parseHtmlNode(
 	// `sourceCodeLocation` will be undefined if the element was implicitly created by the parser.
 	if (p5Node.sourceCodeLocation == null) return undefined;
 
+	const recoveredEndTag = getRecoveredEndTag(p5Node, context);
 	const htmlNodeBase: IHtmlNodeBase = {
 		tagName: p5Node.tagName.toLowerCase(),
 		attributes: [],
-		location: makeHtmlNodeLocation(p5Node, context),
+		location: makeHtmlNodeLocation(p5Node, recoveredEndTag),
 		children: [],
 		document: context.document,
 		parent
@@ -68,7 +71,16 @@ export function parseHtmlNode(
 		htmlNode.children = parseHtmlNodes(p5Node.childNodes || [], htmlNode, context);
 	}
 
-	htmlNode.attributes = parseHtmlNodeAttrs(p5Node, { ...context, htmlNode });
+	const attrs =
+		recoveredEndTag == null
+			? p5Node.attrs
+			: p5Node.attrs.filter(attr => {
+					const location = p5Node.sourceCodeLocation?.attrs?.[attr.name];
+					// parse5 keeps the first occurrence of a duplicate attribute name.
+					// Preserve real attributes that precede the recovered closing tag.
+					return location == null || location.startOffset < recoveredEndTag.start || location.endOffset > recoveredEndTag.end;
+				});
+	htmlNode.attributes = parseHtmlNodeAttrs({ ...p5Node, attrs }, { ...context, htmlNode });
 
 	return htmlNode;
 }
@@ -76,9 +88,9 @@ export function parseHtmlNode(
 /**
  * Creates source code location from a p5Node.
  * @param p5Node
- * @param context
+ * @param recoveredEndTag
  */
-function makeHtmlNodeLocation(p5Node: DefaultTreeAdapterTypes.Element, context: ParseHtmlContext): IHtmlNodeSourceCodeLocation {
+function makeHtmlNodeLocation(p5Node: DefaultTreeAdapterTypes.Element, recoveredEndTag?: Range): IHtmlNodeSourceCodeLocation {
 	const loc = p5Node.sourceCodeLocation!;
 
 	return {
@@ -90,15 +102,44 @@ function makeHtmlNodeLocation(p5Node: DefaultTreeAdapterTypes.Element, context: 
 		},
 		startTag: {
 			start: loc.startTag!.startOffset,
-			end: loc.startTag!.endOffset
+			end: recoveredEndTag?.start ?? loc.startTag!.endOffset
 		},
 		endTag:
-			loc.endTag == null
+			recoveredEndTag ??
+			(loc.endTag == null
 				? undefined
 				: {
 						start: loc.endTag.startOffset,
 						end: loc.endTag.endOffset
-					}
+					})
+	};
+}
+
+function getRecoveredEndTag(p5Node: DefaultTreeAdapterTypes.Element, context: ParseHtmlContext): Range | undefined {
+	if (!context.recoverExplicitlyClosedCustomElement || !isCustomElementTagName(p5Node.tagName)) {
+		return undefined;
+	}
+
+	const loc = p5Node.sourceCodeLocation;
+	const closingTagStart = loc?.attrs?.["<"];
+	if (loc == null || closingTagStart == null || loc.endTag != null) {
+		return undefined;
+	}
+
+	const closingTagEndOffset = context.html.indexOf(">", closingTagStart.startOffset) + 1;
+	if (closingTagEndOffset <= closingTagStart.startOffset) {
+		return undefined;
+	}
+
+	const closingTagText = context.html.slice(closingTagStart.startOffset, closingTagEndOffset);
+	const closingTagMatch = closingTagText.match(/^<\/([^\t\n\f\r />]+)[\t\n\f\r ]*>$/);
+	if (closingTagMatch == null || closingTagMatch[1].toLowerCase() !== p5Node.tagName.toLowerCase()) {
+		return undefined;
+	}
+
+	return {
+		start: closingTagStart.startOffset,
+		end: closingTagEndOffset
 	};
 }
 
