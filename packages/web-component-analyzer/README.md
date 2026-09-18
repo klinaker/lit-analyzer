@@ -95,6 +95,10 @@ class MyElement extends HTMLElement {
 }
 ```
 
+### Accessors and observed attributes
+
+Getter/setter pairs use the setter parameter type for writable properties, regardless of declaration order. Static `observedAttributes` supports getters and array properties, including readonly arrays, constant references, and resolvable spreads. Dynamic values are ignored. Calls to `getAttribute()` alone do not declare public attributes.
+
 ### Overview of supported JSDoc tags
 
 <!-- prettier-ignore -->

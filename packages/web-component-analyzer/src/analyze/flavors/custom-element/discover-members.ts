@@ -1,5 +1,5 @@
 import { toSimpleType } from "ts-simple-type";
-import type { BinaryExpression, ExpressionStatement, Node, ReturnStatement } from "typescript";
+import type { ArrayLiteralExpression, BinaryExpression, ExpressionStatement, Node, ReturnStatement } from "typescript";
 import type { ComponentMember } from "../../types/features/component-member";
 import { getMemberVisibilityFromNode, getModifiersFromNode, hasModifier } from "../../util/ast-util";
 import { getJsDoc } from "../../util/js-doc-util";
@@ -21,6 +21,11 @@ export function discoverMembers(node: Node, context: AnalyzerDeclarationVisitCon
 	// Never pick up members not declared directly on the declaration node being traversed
 	if (node.parent !== context.declarationNode) {
 		return undefined;
+	}
+
+	// static readonly observedAttributes = ["a", "b"] as const;
+	if (ts.isPropertyDeclaration(node) && hasModifier(node, ts.SyntaxKind.StaticKeyword, ts) && node.name.getText() === "observedAttributes") {
+		return discoverObservedAttributes(node.initializer, context);
 	}
 
 	// static get observedAttributes() { return ['c', 'l']; }
@@ -150,4 +155,51 @@ export function discoverMembers(node: Node, context: AnalyzerDeclarationVisitCon
 	}
 
 	return undefined;
+}
+
+function discoverObservedAttributes(node: Node | undefined, context: AnalyzerDeclarationVisitContext): ComponentMember[] {
+	if (node == null) {
+		return [];
+	}
+
+	const { ts } = context;
+	const resolvedValue = resolveNodeValue(node, { ...context, strict: true });
+	const arrayLiteral = resolvedValue != null && ts.isArrayLiteralExpression(resolvedValue.node) ? resolvedValue.node : undefined;
+	if (arrayLiteral == null) {
+		return [];
+	}
+
+	return discoverObservedAttributeNodes(arrayLiteral, context).flatMap(attrNameNode => {
+		const attrName = resolveNodeValue(attrNameNode, { ...context, strict: true })?.value;
+		if (typeof attrName !== "string") return [];
+
+		return [
+			{
+				priority: "medium",
+				node: attrNameNode,
+				jsDoc: getJsDoc(attrNameNode, ts),
+				kind: "attribute",
+				attrName,
+				type: undefined // () => ({ kind: "ANY" } as SimpleType),
+			}
+		];
+	});
+}
+
+function discoverObservedAttributeNodes(arrayLiteral: ArrayLiteralExpression, context: AnalyzerDeclarationVisitContext): Node[] {
+	const { ts } = context;
+	const nodes: Node[] = [];
+
+	for (const element of arrayLiteral.elements) {
+		if (ts.isSpreadElement(element)) {
+			const resolvedSpread = resolveNodeValue(element.expression, { ...context, strict: true });
+			if (resolvedSpread != null && ts.isArrayLiteralExpression(resolvedSpread.node)) {
+				nodes.push(...discoverObservedAttributeNodes(resolvedSpread.node, context));
+			}
+		} else {
+			nodes.push(element);
+		}
+	}
+
+	return nodes;
 }

@@ -1,4 +1,3 @@
-import type { TypeChecker } from "typescript";
 import type { AnalyzerVisitContext } from "../../analyzer-visit-context";
 import type { PriorityKind } from "../../flavors/analyzer-flavor";
 import type { ComponentMember, ComponentMemberAttribute, ComponentMemberProperty } from "../../types/features/component-member";
@@ -61,7 +60,7 @@ export function mergeMembers(members: ComponentMember[], context: AnalyzerVisitC
 			clearMergeMapWithMember(mergeableMember, mergeMap);
 			clearMergeMapWithMember(member, mergeMap);
 
-			newMember = mergeMemberIntoMember(mergeableMember, member, context.checker);
+			newMember = mergeMemberIntoMember(mergeableMember, member, context.ts);
 		}
 
 		// Add to merge map
@@ -142,27 +141,38 @@ function findMemberToMerge(similar: ComponentMember, mergeMap: MergeMap): Compon
  * This operation prioritizes leftMember
  * @param leftMember
  * @param rightMember
- * @param checker
+ * @param ts
  */
-function mergeMemberIntoMember<T extends ComponentMemberProperty | ComponentMemberAttribute>(leftMember: T, rightMember: T, checker: TypeChecker): T {
+function mergeMemberIntoMember<T extends ComponentMemberProperty | ComponentMemberAttribute>(
+	leftMember: T,
+	rightMember: T,
+	ts: AnalyzerVisitContext["ts"]
+): T {
 	// Always prioritize merging attribute into property if possible
 	if (leftMember.kind === "attribute" && rightMember.kind === "property") {
-		return mergeMemberIntoMember(rightMember, leftMember, checker);
+		return mergeMemberIntoMember(rightMember, leftMember, ts);
 	}
+	// Property accessors have separate read and write types; property bindings use the setter.
+	// The node can be missing for members parsed from plain block comments.
+	const setterMember =
+		leftMember.kind === "property" && leftMember.node != null && ts.isSetAccessor(leftMember.node)
+			? leftMember
+			: rightMember.kind === "property" && rightMember.node != null && ts.isSetAccessor(rightMember.node)
+				? rightMember
+				: undefined;
+	const type =
+		setterMember?.type ??
+		(leftMember.kind === rightMember.kind || leftMember.kind === "property"
+			? (leftMember.type ?? rightMember.type)
+			: rightMember.kind === "property"
+				? (rightMember.type ?? leftMember.type)
+				: undefined);
 
 	return {
 		...leftMember,
+		node: setterMember?.node ?? leftMember.node,
 		attrName: leftMember.attrName ?? rightMember.attrName,
-		type: (() => {
-			// Always prioritize a "property" over an "attribute" when merging types
-			if (leftMember.kind === rightMember.kind || leftMember.kind === "property") {
-				return leftMember.type ?? rightMember.type;
-			} else if (rightMember.kind === "property") {
-				return rightMember.type ?? leftMember.type;
-			} else {
-				return;
-			}
-		})(),
+		type,
 		typeHint: leftMember.typeHint ?? rightMember.typeHint,
 		jsDoc: mergeJsDoc(leftMember.jsDoc, rightMember.jsDoc),
 		modifiers: mergeModifiers(leftMember.modifiers, rightMember.modifiers),

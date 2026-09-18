@@ -1,5 +1,6 @@
 import { analyzeTextWithCurrentTsModule } from "../../helpers/analyze-text-with-current-ts-module";
 import { tsTest } from "../../helpers/ts-test";
+import { getAttributeNames } from "../../helpers/util";
 
 tsTest("Discovers elements defined using customElements.define", t => {
 	const {
@@ -15,6 +16,39 @@ tsTest("Discovers elements defined using customElements.define", t => {
 
 	t.is(componentDefinitions.length, 1);
 	t.is(componentDefinitions[0].tagName, "my-element");
+});
+
+tsTest("Discovers attributes declared by a static observedAttributes property", t => {
+	const {
+		results: [result]
+	} = analyzeTextWithCurrentTsModule(`
+		class MyElement extends HTMLElement {
+			static readonly observedAttributes = ["is-loading", "data-value"] as const;
+		}
+
+		customElements.define("my-element", MyElement);
+	`);
+
+	const { members = [] } = result.componentDefinitions[0]?.declaration || {};
+	t.deepEqual(getAttributeNames(members), ["is-loading", "data-value"]);
+});
+
+tsTest("Resolves constant observedAttributes spreads but ignores dynamic values", t => {
+	const {
+		results: [result]
+	} = analyzeTextWithCurrentTsModule(`
+		const sharedAttributes = ["data-value"] as const;
+		declare const dynamicAttribute: string;
+
+		class MyElement extends HTMLElement {
+			static readonly observedAttributes = ["is-loading", ...sharedAttributes, dynamicAttribute] as const;
+		}
+
+		customElements.define("my-element", MyElement);
+	`);
+
+	const { members = [] } = result.componentDefinitions[0]?.declaration || {};
+	t.deepEqual(getAttributeNames(members), ["is-loading", "data-value"]);
 });
 
 tsTest("Discovers elements defined using window.customElements.define", t => {

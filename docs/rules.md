@@ -152,6 +152,8 @@ Attributes, properties and events are picked up on custom elements using [web-co
 
 #### no-unknown-attribute, no-unknown-property
 
+Static `observedAttributes` getters and array properties declare known attributes. Resolvable constant arrays and spreads are supported; dynamic values are ignored. Reading an attribute with `getAttribute()` does not declare it.
+
 You will get a warning whenever you use an unknown attribute or property. This check is made on both custom elements and built in elements.
 
 **The following example is considered a warning:**
